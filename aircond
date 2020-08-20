@@ -1,0 +1,139 @@
+#!/usr/bin/env python3.6
+#
+# This file is part of tngd.
+#
+# tngd is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# tngd is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with tngd.  If not, see <http://www.gnu.org/licenses/>.
+
+"""Front end for the TNG weather feed for the Warwick one-metre telescope"""
+
+import datetime
+import threading
+import netrc
+import sys
+import time
+import traceback
+import pcomfortcloud
+from pcomfortcloud.constants import Power
+import Pyro4
+from warwick.observatory.common import daemons, log
+
+# pylint: disable=broad-except
+# pylint: disable=too-few-public-methods
+# pylint: disable=no-self-use
+
+INSTRUMENT_ROOM = '9e25a2be4a45fe2e26eb506c0e1d6d2c'
+INSTRUMENT_ROOM_UID = 'C404723677'
+
+COMP_ROOM = 'ec91601b341ae0b90734531762590d01'
+COMP_ROOM_UID = 'C330372672'
+
+
+class AirconDaemon:
+    def __init__(self):
+        self._query_error = False
+        self._running = True
+        self._last_measurement = None
+
+        auth = netrc.netrc()
+        self.account = auth.authenticators('aircon')
+        if not self.account:
+            raise Exception('aircon account missing from ~/.netrc')
+
+        runloop = threading.Thread(target=self.run)
+        runloop.daemon = True
+        runloop.start()
+
+    def run(self):
+        """Main run loop"""
+        while self._running:
+            query_delay = 30
+            try:
+                with pcomfortcloud.Session(self.account[0], self.account[2]) as session:
+                    # HACK: Hardcode device GUIDs that the library otherwise only sets when calling get_devices()
+                    # pylint: disable=protected-access
+                    session._deviceIndexer = {
+                        INSTRUMENT_ROOM: INSTRUMENT_ROOM_UID,
+                        COMP_ROOM: COMP_ROOM_UID
+                    }
+                    # pylint: enable=protected-access
+
+                    instrument_room = session.get_device(INSTRUMENT_ROOM)
+                    comp_room = session.get_device(COMP_ROOM)
+
+                    updated = {
+                        'date': datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
+                        'instrument_room': {},
+                        'comp_room': {}
+                    }
+
+                    if instrument_room and 'parameters' in instrument_room:
+                        params = instrument_room['parameters']
+                        updated['instrument_room'] = {
+                            'enabled': params['power'] == Power.On,
+                            'temperature_setpoint': params['temperature'],
+                            'temperature_outside': params['temperatureOutside'],
+                            'temperature_inside': params['temperatureInside']
+                        }
+
+                    if comp_room:
+                        params = comp_room['parameters']
+                        updated['comp_room'] = {
+                            'enabled': params['power'] == Power.On,
+                            'temperature_setpoint': params['temperature'],
+                            'temperature_outside': params['temperatureOutside'],
+                            'active': 2
+                        }
+
+                    try:
+                        with daemons.superwasp_roomalert.connect() as roomalert:
+                            latest = roomalert.last_measurement()
+
+                    except Exception:
+                        print('error: unable to communicate with Room Alert daemon')
+
+                    if 'aircon_no_airflow' in latest:
+                        updated['comp_room']['active'] = 0 if latest['aircon_no_airflow'] else 1
+
+                    # Atomic, so does not need a lock
+                    self._last_measurement = updated
+
+                    if 'roof_closed' in latest:
+                        power = instrument_room['parameters']['power']
+                        if latest['roof_closed'] and power == Power.Off:
+                            print('Roof is closed: enabling instrument room air conditioner')
+                            log.info('aircond', 'Roof is closed: enabling instrument room air conditioner')
+                            session.set_device(INSTRUMENT_ROOM, power=Power.On)
+                            query_delay = 1
+                        elif not latest['roof_closed'] and power == Power.On:
+                            print('Roof is open: disabling instrument room air conditioner')
+                            log.info('aircond', 'Roof is open: disabling instrument room air conditioner')
+                            session.set_device(INSTRUMENT_ROOM, power=Power.Off)
+                            query_delay = 1
+
+            except Exception:
+                traceback.print_exc(file=sys.stdout)
+
+            time.sleep(query_delay)
+
+    @Pyro4.expose
+    def last_measurement(self):
+        """
+        Query the latest valid measurement.
+        May return None if no data is available
+        """
+        return self._last_measurement
+
+
+if __name__ == '__main__':
+    daemons.superwasp_aircon.launch(AirconDaemon())

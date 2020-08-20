@@ -45,7 +45,7 @@ class AirconDaemon:
         self._running = True
         self._last_measurement = None
 
-        auth = netrc.netrc()
+        auth = netrc.netrc('/root/.netrc')
         self.account = auth.authenticators('aircon')
         if not self.account:
             raise Exception('aircon account missing from ~/.netrc')

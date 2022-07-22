@@ -7,9 +7,7 @@ After=network-online.target
 [Service]
 Restart=on-failure
 Type=simple
-ExecStart=/usr/bin/env python3.6 -u /usr/bin/aircond
-ExecStartPost=/usr/bin/env python3.6 -u /usr/bin/obslog info aircond Started by systemd
-ExecStopPost=/usr/bin/env python3.6 -u /usr/bin/obslog info aircond Stopped by systemd
+ExecStart=/usr/bin/env python3 -u /usr/bin/aircond
 StandardOutput=syslog
 StandardError=syslog
 

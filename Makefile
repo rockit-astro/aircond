@@ -6,6 +6,6 @@ RPMBUILD = rpmbuild --define "_topdir %(pwd)/build" \
 
 all:
 	mkdir -p build
-	${RPMBUILD} -ba superwasp-aircon-server.spec
+	${RPMBUILD} -ba halfmetre-aircon-server.spec
 	mv build/noarch/*.rpm .
 	rm -rf build

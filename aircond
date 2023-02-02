@@ -96,11 +96,12 @@ class AirconDaemon:
                         }
 
                     try:
-                        with daemons.superwasp_roomalert.connect() as roomalert:
-                            latest = roomalert.last_measurement()
+                        with daemons.halfmetre_domealert.connect() as domealert:
+                            latest = domealert.last_measurement()
 
                     except Exception:
-                        print('error: unable to communicate with Room Alert daemon')
+                        latest = {}
+                        print('error: unable to communicate with Domealert daemon')
 
                     if 'aircon_no_airflow' in latest:
                         updated['comp_room']['active'] = 0 if latest['aircon_no_airflow'] else 1
@@ -111,13 +112,13 @@ class AirconDaemon:
                     if 'roof_closed' in latest:
                         power = instrument_room['parameters']['power']
                         if latest['roof_closed'] and power == Power.Off:
-                            print('Roof is closed: enabling instrument room air conditioner')
-                            log.info('aircond', 'Roof is closed: enabling instrument room air conditioner')
+                            print('Roof is closed: enabling halfmetre room air conditioner')
+                            log.info('aircond', 'Roof is closed: enabling halfmetre room air conditioner')
                             session.set_device(INSTRUMENT_ROOM, power=Power.On)
                             query_delay = 1
                         elif not latest['roof_closed'] and power == Power.On:
-                            print('Roof is open: disabling instrument room air conditioner')
-                            log.info('aircond', 'Roof is open: disabling instrument room air conditioner')
+                            print('Roof is open: disabling halfmetre room air conditioner')
+                            log.info('aircond', 'Roof is open: disabling halfmetre room air conditioner')
                             session.set_device(INSTRUMENT_ROOM, power=Power.Off)
                             query_delay = 1
 
@@ -136,4 +137,4 @@ class AirconDaemon:
 
 
 if __name__ == '__main__':
-    daemons.superwasp_aircon.launch(AirconDaemon())
+    daemons.halfmetre_aircon.launch(AirconDaemon())

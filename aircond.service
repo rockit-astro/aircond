@@ -1,5 +1,5 @@
 [Unit]
-Description=Daemon for querying and controlling the SuperWASP airconditioners
+Description=Daemon for querying and controlling the halfmetre and computer room airconditioners
 After=syslog.target
 Wants=network-online.target
 After=network-online.target
@@ -8,8 +8,6 @@ After=network-online.target
 Restart=on-failure
 Type=simple
 ExecStart=/usr/bin/env python3 -u /usr/bin/aircond
-StandardOutput=syslog
-StandardError=syslog
 
 [Install]
 WantedBy=multi-user.target

@@ -1,8 +1,8 @@
-Name:      superwasp-aircon-server
-Version:   20220722
+Name:      halfmetre-aircon-server
+Version:   20230202
 Release:   0
 Url:       https://github.com/warwick-one-metre/aircond
-Summary:   Daemon for querying and controlling the SuperWASP air conditioners.
+Summary:   Daemon for querying and controlling the half metre and computer room air conditioners.
 License:   GPL-3.0
 Group:     Unspecified
 BuildArch: noarch

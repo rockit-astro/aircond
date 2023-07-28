@@ -1,10 +1,8 @@
 ## Air conditioner daemon
 
-`aircond` is a Pyro frontend that interfaces with the Panasonic comfort cloud API to monitor and control the air conditioners.
+`aircond` is a Pyro frontend that interfaces with the Panasonic comfort cloud API to monitor and control the air conditioners in the Half Metre (old SuperWASP) building.
 
 The halfmetre room air conditioner is automatically disabled when the roof is open (as measured by the domealert), and restored when closed.
-
-See [Software Infrastructure](https://github.com/warwick-one-metre/docs/wiki/Software-Infrastructure) for an overview of the observatory software architecture and instructions for developing and deploying the code.
 
 ### Software setup
 

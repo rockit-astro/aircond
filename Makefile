@@ -6,6 +6,8 @@ RPMBUILD = rpmbuild --define "_topdir %(pwd)/build" \
 
 all:
 	mkdir -p build
-	${RPMBUILD} -ba halfmetre-aircon-server.spec
+	date --utc +%Y%m%d%H%M%S > VERSION
+	${RPMBUILD} --define "_version %(cat VERSION)" -ba rockit-aircon-server.spec
+
 	mv build/noarch/*.rpm .
-	rm -rf build
+	rm -rf build VERSION

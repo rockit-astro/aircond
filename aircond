@@ -56,71 +56,66 @@ class AirconDaemon:
 
     def run(self):
         """Main run loop"""
+        session = pcomfortcloud.Session(self.account[0], self.account[2])
+        client = pcomfortcloud.ApiClient(session)
+        client.get_devices()
+
         while self._running:
             query_delay = 30
             try:
-                with pcomfortcloud.Session(self.account[0], self.account[2]) as session:
-                    # HACK: Hardcode device GUIDs that the library otherwise only sets when calling get_devices()
-                    # pylint: disable=protected-access
-                    session._deviceIndexer = {
-                        INSTRUMENT_ROOM: INSTRUMENT_ROOM_UID,
-                        COMP_ROOM: COMP_ROOM_UID
+                instrument_room = client.get_device(INSTRUMENT_ROOM)
+                comp_room = client.get_device(COMP_ROOM)
+
+                updated = {
+                    'date': datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
+                    'instrument_room': {},
+                    'comp_room': {}
+                }
+
+                if instrument_room and 'parameters' in instrument_room:
+                    params = instrument_room['parameters']
+                    updated['instrument_room'] = {
+                        'enabled': params['power'] == Power.On,
+                        'temperature_setpoint': params['temperature'],
+                        'temperature_outside': params['temperatureOutside'],
+                        'temperature_inside': params['temperatureInside']
                     }
-                    # pylint: enable=protected-access
 
-                    instrument_room = session.get_device(INSTRUMENT_ROOM)
-                    comp_room = session.get_device(COMP_ROOM)
-
-                    updated = {
-                        'date': datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
-                        'instrument_room': {},
-                        'comp_room': {}
+                if comp_room:
+                    params = comp_room['parameters']
+                    updated['comp_room'] = {
+                        'enabled': params['power'] == Power.On,
+                        'temperature_setpoint': params['temperature'],
+                        'temperature_outside': params['temperatureOutside'],
+                        'active': 2
                     }
 
-                    if instrument_room and 'parameters' in instrument_room:
-                        params = instrument_room['parameters']
-                        updated['instrument_room'] = {
-                            'enabled': params['power'] == Power.On,
-                            'temperature_setpoint': params['temperature'],
-                            'temperature_outside': params['temperatureOutside'],
-                            'temperature_inside': params['temperatureInside']
-                        }
+                try:
+                    with daemons.halfmetre_domealert.connect() as domealert:
+                        latest = domealert.last_measurement()
 
-                    if comp_room:
-                        params = comp_room['parameters']
-                        updated['comp_room'] = {
-                            'enabled': params['power'] == Power.On,
-                            'temperature_setpoint': params['temperature'],
-                            'temperature_outside': params['temperatureOutside'],
-                            'active': 2
-                        }
+                except Exception:
+                    latest = {}
+                    print('error: unable to communicate with Domealert daemon')
 
-                    try:
-                        with daemons.halfmetre_domealert.connect() as domealert:
-                            latest = domealert.last_measurement()
+                if 'aircon_no_airflow' in latest:
+                    updated['comp_room']['active'] = 0 if latest['aircon_no_airflow'] else 1
 
-                    except Exception:
-                        latest = {}
-                        print('error: unable to communicate with Domealert daemon')
+                # Atomic, so does not need a lock
+                self._last_measurement = updated
 
-                    if 'aircon_no_airflow' in latest:
-                        updated['comp_room']['active'] = 0 if latest['aircon_no_airflow'] else 1
-
-                    # Atomic, so does not need a lock
-                    self._last_measurement = updated
-
-                    if 'roof_closed' in latest:
-                        power = instrument_room['parameters']['power']
-                        if latest['roof_closed'] and power == Power.Off:
-                            print('Roof is closed: enabling halfmetre room air conditioner')
-                            log.info('aircond', 'Roof is closed: enabling halfmetre room air conditioner')
-                            session.set_device(INSTRUMENT_ROOM, power=Power.On)
-                            query_delay = 1
-                        elif not latest['roof_closed'] and power == Power.On:
-                            print('Roof is open: disabling halfmetre room air conditioner')
-                            log.info('aircond', 'Roof is open: disabling halfmetre room air conditioner')
-                            session.set_device(INSTRUMENT_ROOM, power=Power.Off)
-                            query_delay = 1
+                if 'roof_closed' in latest and instrument_room is not None:
+                    power = instrument_room['parameters']['power']
+                    if latest['roof_closed'] and power == Power.Off:
+                        print('Roof is closed: enabling halfmetre room air conditioner')
+                        log.info('aircond', 'Roof is closed: enabling halfmetre room air conditioner')
+                        client.set_device(INSTRUMENT_ROOM, power=Power.On)
+                        query_delay = 5
+                    elif not latest['roof_closed'] and power == Power.On:
+                        print('Roof is open: disabling halfmetre room air conditioner')
+                        log.info('aircond', 'Roof is open: disabling halfmetre room air conditioner')
+                        client.set_device(INSTRUMENT_ROOM, power=Power.Off)
+                        query_delay = 5
 
             except Exception:
                 traceback.print_exc(file=sys.stdout)
